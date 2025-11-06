@@ -1,0 +1,28 @@
+{
+  "name": "arbiter-service",
+  "version": "1.0.0",
+  "description": "Gemini-powered AI arbitration service for Artha Network escrow disputes",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@noble/hashes": "^1.5.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "tweetnacl": "^1.0.3",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.4"
+  }
+}
