@@ -1,12 +1,12 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, GenerativeModel, SchemaType, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import { sha256 } from '@noble/hashes/sha256';
 import nacl from 'tweetnacl';
-import { 
-  ArbitrationRequest, 
-  ResolveTicket, 
+import {
+  ArbitrationRequest,
+  ResolveTicket,
   SignedResolveTicket,
   responseJsonSchema,
-  ResolveTicketSchema 
+  ResolveTicketSchema
 } from './types.js';
 import { SYSTEM_PROMPT, getPolicyForPrompt } from './policy.js';
 
@@ -19,7 +19,7 @@ export class GeminiArbiter {
     private arbiterSecretHex: string
   ) {
     this.genai = new GoogleGenerativeAI(geminiApiKey);
-    
+
     // Generate keypair from secret
     const secretKey = Uint8Array.from(Buffer.from(arbiterSecretHex, 'hex'));
     this.arbiterKeypair = nacl.sign.keyPair.fromSeed(secretKey.slice(0, 32));
@@ -40,30 +40,30 @@ export class GeminiArbiter {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
 
     // 4. Call Gemini with structured output
-    const model = this.genai.getGenerativeModel({ 
-      model: 'gemini-1.5-pro',
+    const model = this.genai.getGenerativeModel({
+      model: process.env.GEMINI_MODEL_ARBITRATION || 'gemini-1.5-pro',
       generationConfig: {
         temperature: 0.1, // Low temperature for consistency
         topP: 0.8,
         topK: 40,
         maxOutputTokens: 1024,
         responseMimeType: 'application/json',
-        responseSchema: responseJsonSchema
+        responseSchema: responseJsonSchema as any
       },
       safetySettings: [
-        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }
       ]
     });
 
     const prompt = this.buildPrompt(request, evidenceText, nonce, expiresAt.toISOString());
-    
+
     try {
-      const result = await model.generateContent(prompt);
+      const result = await this.retryGenerateContent(model, prompt);
       const responseText = result.response.text();
-      
+
       if (!responseText) {
         throw new Error('Empty response from Gemini');
       }
@@ -140,9 +140,9 @@ ${evidenceTexts}`;
    * Build the complete prompt for Gemini
    */
   private buildPrompt(
-    request: ArbitrationRequest, 
-    evidenceText: string, 
-    nonce: string, 
+    request: ArbitrationRequest,
+    evidenceText: string,
+    nonce: string,
     expiresAt: string
   ): string {
     const dealInfo = `DEAL INFORMATION:
@@ -202,6 +202,40 @@ Analyze the evidence against the policy rules and return ONLY the JSON response.
     return Buffer.from(this.arbiterKeypair.publicKey).toString('hex');
   }
 
+
+  /**
+   * Generate contract for a deal
+   */
+  async generateContract(dealDetails: any) {
+    const model = this.genai.getGenerativeModel({
+      model: process.env.GEMINI_MODEL_CONTRACT || 'gemini-2.0-flash',
+      generationConfig: {
+        temperature: 0.7,
+        responseMimeType: 'application/json',
+      }
+    });
+
+    const prompt = `You are an expert legal AI assistant for a smart contract escrow platform.
+
+Generate a professional contract agreement for this deal:
+${JSON.stringify(dealDetails, null, 2)}
+
+Return a JSON object with:
+{
+  "contract": "markdown formatted contract text",
+  "questions": ["question1", "question2", ...]
+}`;
+
+    const result = await this.retryGenerateContent(model, prompt);
+    const responseText = result.response.text();
+
+    if (!responseText) {
+      throw new Error('Empty response from Gemini');
+    }
+
+    return JSON.parse(responseText);
+  }
+
   /**
    * Verify a signed ticket (for testing)
    */
@@ -215,6 +249,21 @@ Analyze the evidence against the policy rules and return ONLY the JSON response.
       return nacl.sign.detached.verify(digest, signature, publicKey);
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Retry wrapper for Gemini API calls
+   */
+  private async retryGenerateContent(model: GenerativeModel, prompt: string, retries = 3): Promise<any> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await model.generateContent(prompt);
+      } catch (error) {
+        if (i === retries - 1) throw error;
+        // Exponential backoff: 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+      }
     }
   }
 }
