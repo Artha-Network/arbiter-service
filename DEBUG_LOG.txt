@@ -1,0 +1,16 @@
+Start of Log
+🧪 Starting AI Arbitration Manual Test...
+Debug: Checking Config...
+Debug: API Key present: true
+Debug: Secret Hex present: true
+Debug: Initializing Arbiter...
+✅ Arbiter initialized
+🔑 Public Key: be829b19c869562ce340ac4210c9454bd01497bc0173df64d4cfec00aa0a0203
+
+📡 Sending request to Gemini...
+
+❌ Test Failed: Arbitration engine error: Empty response from Gemini
+Error: Arbitration engine error: Empty response from Gemini
+    at GeminiArbiter.arbitrateCase (E:\Artha-Network\arbiter-service\src\gemini-arbiter.ts:85:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async runTest (E:\Artha-Network\arbiter-service\scripts\test-arbitration.ts:84:24)

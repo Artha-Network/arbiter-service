@@ -2,30 +2,43 @@ import 'dotenv/config';
 import express from 'express';
 import { GeminiArbiter } from './gemini-arbiter.js';
 import { ArbitrationRequestSchema } from './types.js';
+import { CONFIG } from './config.js';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const ARBITER_SECRET_HEX = process.env.ARBITER_ED25519_SECRET_HEX!;
-const PORT = process.env.PORT || 3001;
+const arbiter = new GeminiArbiter();
 
-if (!GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY environment variable is required');
-}
+// Simple API Key Authentication Middleware
+// Only enforce auth if ARBITER_ADMIN_KEY is configured
+const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Allow health check without auth
+  if (req.path === '/health' || req.path === '/arbiter/pubkey') {
+    return next();
+  }
 
-if (!ARBITER_SECRET_HEX) {
-  throw new Error('ARBITER_ED25519_SECRET_HEX environment variable is required');
-}
+  // If no admin key is configured, skip authentication (development mode)
+  if (!CONFIG.security.adminKey) {
+    return next();
+  }
 
-const arbiter = new GeminiArbiter(GEMINI_API_KEY, ARBITER_SECRET_HEX);
+  const adminKey = req.headers['x-admin-key'];
+  if (!adminKey || adminKey !== CONFIG.security.adminKey) {
+    res.status(401).json({ error: 'Unauthorized', message: 'Invalid or missing Admin Key' });
+    return;
+  }
+  next();
+};
+
+app.use(requireAuth);
 
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     service: 'ai-arbiter-service',
     arbiter_pubkey: arbiter.getArbiterPublicKey(),
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    env: CONFIG.server.env
   });
 });
 
@@ -76,15 +89,15 @@ app.post('/verify', (req, res) => {
 
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error', message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong' });
+  res.status(500).json({ error: 'Internal server error', message: CONFIG.server.env === 'development' ? err.message : 'Something went wrong' });
 });
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found', message: `Route ${req.method} ${req.path} not found` });
 });
 
-app.listen(PORT, () => {
-  console.log(`🤖 AI Arbiter Service running on port ${PORT}`);
+app.listen(CONFIG.server.port, () => {
+  console.log(`🤖 AI Arbiter Service running on port ${CONFIG.server.port}`);
   console.log(`🔑 Arbiter Public Key: ${arbiter.getArbiterPublicKey()}`);
-  console.log(`🌐 Health check: http://localhost:${PORT}/health`);
+  console.log(`🌐 Health check: http://localhost:${CONFIG.server.port}/health`);
 });

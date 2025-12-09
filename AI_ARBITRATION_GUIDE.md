@@ -273,6 +273,22 @@ await program.methods
 
 ---
 
+## Best Practices & Maintenance
+
+### 1. Schema Management
+- **Single Source of Truth**: We use `zod-to-json-schema` to derive the JSON schema for Gemini directly from our Zod validation schemas in `src/types.ts`.
+- **Validation**: Always validate Gemini's output with `ResolveTicketSchema.parse()` before using it. This is our primary defense against hallucinations.
+
+### 2. Configuration (`src/config.ts`)
+- **Centralized Config**: All environment variables and magic numbers (model names, timeouts) are defined in `src/config.ts`.
+- **Model Versions**: When upgrading Gemini models, update `GEMINI_MODEL_ARBITRATION` or `GEMINI_MODEL_CONTRACT` in your `.env` file or the defaults in `config.ts`.
+
+### 3. Error Handling
+- **Retry Logic**: The arbiter implements exponential backoff for `429` (Rate Limit) errors from Gemini.
+- **Fail Fast**: The service refuses to start if critical keys (`GEMINI_API_KEY`, `ARBITER_ED25519_SECRET_HEX`) are missing.
+
+---
+
 **Status**: ✅ Production Ready  
-**Last Updated**: December 2, 2024  
-**Version**: 1.0.0
+**Last Updated**: December 7, 2024  
+**Version**: 1.1.0

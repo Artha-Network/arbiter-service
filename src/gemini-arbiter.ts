@@ -1,6 +1,8 @@
-import { GoogleGenerativeAI, GenerativeModel, SchemaType, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
+import { GoogleGenAI, Part } from '@google/genai';
 import { sha256 } from '@noble/hashes/sha256';
 import nacl from 'tweetnacl';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 import {
   ArbitrationRequest,
   ResolveTicket,
@@ -9,19 +11,26 @@ import {
   ResolveTicketSchema
 } from './types.js';
 import { SYSTEM_PROMPT, getPolicyForPrompt } from './policy.js';
+import { CONFIG } from './config.js';
 
 export class GeminiArbiter {
-  private genai: GoogleGenerativeAI;
+  private ai: GoogleGenAI;
   private arbiterKeypair: nacl.SignKeyPair;
+  private supabase: SupabaseClient | null;
 
-  constructor(
-    private geminiApiKey: string,
-    private arbiterSecretHex: string
-  ) {
-    this.genai = new GoogleGenerativeAI(geminiApiKey);
+  constructor() {
+    this.ai = new GoogleGenAI({ apiKey: CONFIG.gemini.apiKey });
+
+    // Initialize Supabase only if credentials are available
+    if (CONFIG.supabase.url && CONFIG.supabase.serviceKey) {
+      this.supabase = createClient(CONFIG.supabase.url, CONFIG.supabase.serviceKey);
+    } else {
+      this.supabase = null;
+      console.warn('⚠️ Supabase client not initialized. Evidence fetching will be disabled.');
+    }
 
     // Generate keypair from secret
-    const secretKey = Uint8Array.from(Buffer.from(arbiterSecretHex, 'hex'));
+    const secretKey = Uint8Array.from(Buffer.from(CONFIG.arbiter.secretHex, 'hex'));
     this.arbiterKeypair = nacl.sign.keyPair.fromSeed(secretKey.slice(0, 32));
   }
 
@@ -30,52 +39,49 @@ export class GeminiArbiter {
    */
   async arbitrateCase(request: ArbitrationRequest): Promise<SignedResolveTicket> {
     // 1. Validate input
-    this.validateRequest(request);
+    this.validateBusinessRules(request);
 
-    // 2. Prepare evidence text
-    const evidenceText = this.prepareEvidenceText(request);
+    // 2. Prepare evidence (Multimodal)
+    const evidenceParts = await this.prepareEvidenceParts(request);
 
-    // 3. Generate nonce and expiry
-    const nonce = Date.now().toString();
+    // 3. Generate secure nonce and expiry
+    const nonce = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours from now
 
-    // 4. Call Gemini with structured output
-    const model = this.genai.getGenerativeModel({
-      model: process.env.GEMINI_MODEL_ARBITRATION || 'gemini-1.5-pro',
-      generationConfig: {
-        temperature: 0.1, // Low temperature for consistency
-        topP: 0.8,
-        topK: 40,
-        maxOutputTokens: 1024,
-        responseMimeType: 'application/json',
-        responseSchema: responseJsonSchema as any
-      },
-      safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }
-      ]
-    });
+    // 4. Build system instructions and context
+    const contextPrompt = this.buildContextPrompt(request, nonce, expiresAt.toISOString());
 
-    const prompt = this.buildPrompt(request, evidenceText, nonce, expiresAt.toISOString());
+    // Combine context with evidence parts
+    const content = [
+      { text: contextPrompt },
+      ...evidenceParts
+    ];
 
     try {
-      const result = await this.retryGenerateContent(model, prompt);
-      const responseText = result.response.text();
+      // 5. Call Gemini using new SDK
+      const response = await this.ai.models.generateContent({
+        model: CONFIG.gemini.arbitrationModel,
+        contents: [{ role: 'user', parts: content }],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: responseJsonSchema as any
+        }
+      });
+
+      const responseText = response.text;
 
       if (!responseText) {
         throw new Error('Empty response from Gemini');
       }
 
-      // 5. Parse and validate the response
+      // 6. Parse and validate the response
       const ticket = JSON.parse(responseText) as ResolveTicket;
       const validatedTicket = ResolveTicketSchema.parse(ticket);
 
-      // 6. Sign the ticket
+      // 7. Sign the ticket
       const signedTicket = this.signTicket(validatedTicket);
 
-      // 7. Log the decision (in production, store securely)
+      // 8. Log the decision
       console.log(`Arbitration Decision for ${request.deal.deal_id}:`, {
         outcome: validatedTicket.outcome,
         confidence: validatedTicket.confidence,
@@ -92,56 +98,99 @@ export class GeminiArbiter {
   }
 
   /**
-   * Validate the arbitration request
+   * Validate business rules that Zod cannot easily capture
    */
-  private validateRequest(request: ArbitrationRequest): void {
-    if (!request.deal.deal_id) {
-      throw new Error('Deal ID is required');
+  private validateBusinessRules(request: ArbitrationRequest): void {
+    if (CONFIG.policy.disputeWindowCheck) {
+      const now = Math.floor(Date.now() / 1000);
+      if (now < request.deal.dispute_by) {
+        throw new Error('Dispute period has not yet ended');
+      }
     }
 
     if (request.deal.status !== 'Disputed') {
       throw new Error('Deal must be in Disputed status for arbitration');
     }
+  }
 
-    if (request.evidence.length === 0) {
-      throw new Error('At least some evidence must be provided');
+  /**
+   * Fetch file from Supabase and prepare as Gemini Part
+   */
+  private async fetchEvidenceFile(pathOrCid: string): Promise<Part | null> {
+    if (!this.supabase) {
+      console.warn(`Supabase not available. Cannot fetch evidence ${pathOrCid}`);
+      return null;
     }
 
-    // Check if dispute is still within arbitration window
-    const now = Math.floor(Date.now() / 1000);
-    if (now < request.deal.dispute_by) {
-      throw new Error('Dispute period has not yet ended');
+    try {
+      // Assuming the 'cid' in the request is actually a path in the 'evidence' bucket
+      // or we try to download it. 
+      // For now, let's assume the 'cid' field holds the Supabase storage path.
+
+      const { data, error } = await this.supabase
+        .storage
+        .from('evidence') // Uploads must go to 'evidence' bucket
+        .download(pathOrCid);
+
+      if (error || !data) {
+        console.warn(`Failed to download evidence ${pathOrCid}:`, error);
+        return null;
+      }
+
+      const arrayBuffer = await data.arrayBuffer();
+      const base64Data = Buffer.from(arrayBuffer).toString('base64');
+      return {
+        inlineData: {
+          mimeType: data.type,
+          data: base64Data
+        }
+      };
+    } catch (e) {
+      console.error(`Error processing evidence ${pathOrCid}:`, e);
+      return null;
     }
   }
 
   /**
-   * Prepare evidence text for the model
+   * Prepare evidence parts (Text + Images/Files)
    */
-  private prepareEvidenceText(request: ArbitrationRequest): string {
-    const evidenceTexts = request.evidence.map(evidence => {
-      return `EVIDENCE ${evidence.cid} (${evidence.type}, submitted by ${evidence.submitted_by}):
-Description: ${evidence.description}
-Submitted: ${new Date(evidence.submitted_at * 1000).toISOString()}
-${evidence.extracted_text ? `Content: ${evidence.extracted_text}` : 'Content: [Raw file - not processed]'}
----`;
-    }).join('\n\n');
+  private async prepareEvidenceParts(request: ArbitrationRequest): Promise<Part[]> {
+    const parts: Part[] = [];
 
-    return `SELLER CLAIM:
-${request.seller_claim}
+    // Add Claims as text
+    parts.push({
+      text: `SELLER CLAIM:\n${request.seller_claim}\n\nBUYER CLAIM:\n${request.buyer_claim}\n\nEVIDENCE SUBMITTED:`
+    });
 
-BUYER CLAIM:
-${request.buyer_claim}
+    for (const evidence of request.evidence) {
+      // Add description first
+      parts.push({
+        text: `\nEVIDENCE ITEM (${evidence.type}, submitted by ${evidence.submitted_by}):\nDescription: ${evidence.description}\nSubmitted: ${new Date(evidence.submitted_at * 1000).toISOString()}\n`
+      });
 
-EVIDENCE SUBMITTED:
-${evidenceTexts}`;
+      // Try to fetch the actual file content if it's not just text
+      if (evidence.type !== 'text' && evidence.cid) {
+        const filePart = await this.fetchEvidenceFile(evidence.cid);
+        if (filePart) {
+          parts.push(filePart);
+        } else {
+          parts.push({ text: '[WARNING: Could not retrieve file content from storage]' });
+        }
+      } else if (evidence.extracted_text) {
+        parts.push({ text: `Content: ${evidence.extracted_text}` });
+      }
+
+      parts.push({ text: '\n---\n' });
+    }
+
+    return parts;
   }
 
   /**
-   * Build the complete prompt for Gemini
+   * Build the Context Prompt (System + Deal Info)
    */
-  private buildPrompt(
+  private buildContextPrompt(
     request: ArbitrationRequest,
-    evidenceText: string,
     nonce: string,
     expiresAt: string
   ): string {
@@ -160,8 +209,6 @@ ${getPolicyForPrompt()}
 
 ${dealInfo}
 
-${evidenceText}
-
 REQUIRED OUTPUT:
 Generate a JSON response with these exact fields filled in:
 - schema: "https://artha.network/schemas/resolve-ticket-v1.json"
@@ -174,18 +221,15 @@ Generate a JSON response with these exact fields filled in:
 - nonce: "${nonce}"
 - expires_at_utc: "${expiresAt}"
 
-Analyze the evidence against the policy rules and return ONLY the JSON response.`;
+Analyze the supplied evidence (including attached files) against the policy rules and return ONLY the JSON response.`;
   }
 
   /**
    * Sign the resolve ticket with ed25519
    */
   private signTicket(ticket: ResolveTicket): SignedResolveTicket {
-    // Create canonical JSON representation
     const canonical = Buffer.from(JSON.stringify(ticket, null, 0));
     const digest = Uint8Array.from(sha256(canonical));
-
-    // Sign with ed25519
     const signature = nacl.sign.detached(digest, this.arbiterKeypair.secretKey);
 
     return {
@@ -202,19 +246,10 @@ Analyze the evidence against the policy rules and return ONLY the JSON response.
     return Buffer.from(this.arbiterKeypair.publicKey).toString('hex');
   }
 
-
   /**
    * Generate contract for a deal
    */
   async generateContract(dealDetails: any) {
-    const model = this.genai.getGenerativeModel({
-      model: process.env.GEMINI_MODEL_CONTRACT || 'gemini-2.0-flash',
-      generationConfig: {
-        temperature: 0.7,
-        responseMimeType: 'application/json',
-      }
-    });
-
     const prompt = `You are an expert legal AI assistant for a smart contract escrow platform.
 
 Generate a professional contract agreement for this deal:
@@ -226,8 +261,16 @@ Return a JSON object with:
   "questions": ["question1", "question2", ...]
 }`;
 
-    const result = await this.retryGenerateContent(model, prompt);
-    const responseText = result.response.text();
+    const response = await this.ai.models.generateContent({
+      model: CONFIG.gemini.contractModel,
+      contents: prompt,
+      config: {
+        temperature: 0.7,
+        responseMimeType: 'application/json',
+      }
+    });
+
+    const responseText = response.text;
 
     if (!responseText) {
       throw new Error('Empty response from Gemini');
@@ -249,21 +292,6 @@ Return a JSON object with:
       return nacl.sign.detached.verify(digest, signature, publicKey);
     } catch {
       return false;
-    }
-  }
-
-  /**
-   * Retry wrapper for Gemini API calls
-   */
-  private async retryGenerateContent(model: GenerativeModel, prompt: string, retries = 3): Promise<any> {
-    for (let i = 0; i < retries; i++) {
-      try {
-        return await model.generateContent(prompt);
-      } catch (error) {
-        if (i === retries - 1) throw error;
-        // Exponential backoff: 1s, 2s, 4s
-        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
-      }
     }
   }
 }

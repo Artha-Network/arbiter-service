@@ -11,12 +11,14 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "@google/genai": "^1.31.0",
     "@noble/hashes": "^1.5.0",
+    "@supabase/supabase-js": "^2.87.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "tweetnacl": "^1.0.3",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zod-to-json-schema": "^3.25.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
