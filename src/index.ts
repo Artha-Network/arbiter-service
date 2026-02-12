@@ -1,13 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
 import { GeminiArbiter } from './gemini-arbiter.js';
+import { ClaudeArbiter } from './claude-arbiter.js';
 import { ArbitrationRequestSchema } from './types.js';
 import { CONFIG } from './config.js';
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
-const arbiter = new GeminiArbiter();
+const arbiter = CONFIG.ai.provider === 'claude'
+  ? new ClaudeArbiter()
+  : new GeminiArbiter();
 
 // Simple API Key Authentication Middleware
 // Only enforce auth if ARBITER_ADMIN_KEY is configured
@@ -80,7 +83,9 @@ app.post('/arbitrate', async (req, res) => {
 
 app.post('/verify', (req, res) => {
   try {
-    const isValid = GeminiArbiter.verifyTicket(req.body);
+    const isValid = CONFIG.ai.provider === 'claude'
+      ? ClaudeArbiter.verifyTicket(req.body)
+      : GeminiArbiter.verifyTicket(req.body);
     res.json({ valid: isValid });
   } catch (error) {
     res.status(400).json({ error: 'Invalid ticket format', message: error instanceof Error ? error.message : 'Unknown error' });

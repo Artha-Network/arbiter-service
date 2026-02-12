@@ -1,8 +1,18 @@
 import 'dotenv/config';
 
+export type AIProvider = 'claude' | 'gemini';
+
 export const CONFIG = {
+    ai: {
+        provider: (process.env.AI_PROVIDER || 'claude').toLowerCase() as AIProvider,
+        anthropic: {
+            apiKey: process.env.ANTHROPIC_API_KEY || '',
+            arbitrationModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+            maxTokens: 1024,
+        },
+    },
     gemini: {
-        apiKey: process.env.GEMINI_API_KEY!,
+        apiKey: process.env.GEMINI_API_KEY || '',
         arbitrationModel: process.env.GEMINI_MODEL_ARBITRATION || 'gemini-2.5-flash',
         contractModel: process.env.GEMINI_MODEL_CONTRACT || 'gemini-2.5-flash',
         defaults: {
@@ -32,9 +42,15 @@ export const CONFIG = {
     }
 };
 
-// Fail fast on missing critical env vars
-if (!CONFIG.gemini.apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is required');
+// Fail fast on missing critical env vars for the selected provider
+if (CONFIG.ai.provider === 'claude') {
+    if (!CONFIG.ai.anthropic.apiKey) {
+        throw new Error('ANTHROPIC_API_KEY is required when AI_PROVIDER=claude');
+    }
+} else {
+    if (!CONFIG.gemini.apiKey) {
+        throw new Error('GEMINI_API_KEY is required when AI_PROVIDER=gemini');
+    }
 }
 
 if (!CONFIG.arbiter.secretHex) {
