@@ -101,8 +101,19 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Not found', message: `Route ${req.method} ${req.path} not found` });
 });
 
-app.listen(CONFIG.server.port, () => {
+const server = app.listen(CONFIG.server.port, () => {
   console.log(`🤖 AI Arbiter Service running on port ${CONFIG.server.port}`);
   console.log(`🔑 Arbiter Public Key: ${arbiter.getArbiterPublicKey()}`);
   console.log(`🌐 Health check: http://localhost:${CONFIG.server.port}/health`);
+});
+
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌ Port ${CONFIG.server.port} is already in use. Stop the other process or set PORT to a different value.`);
+    console.error('   Windows: netstat -ano | findstr :' + CONFIG.server.port + '  then  taskkill /PID <pid> /F');
+    console.error('   macOS/Linux: lsof -i :' + CONFIG.server.port + '  then  kill <pid>\n');
+  } else {
+    console.error('Server error:', err);
+  }
+  process.exit(1);
 });
