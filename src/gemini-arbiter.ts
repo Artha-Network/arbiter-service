@@ -250,14 +250,22 @@ Analyze the supplied evidence (including attached files) against the policy rule
    * Generate contract for a deal
    */
   async generateContract(dealDetails: any) {
+    const dealJson = JSON.stringify(dealDetails, null, 2);
+    if (!dealJson || dealJson === '{}') {
+      throw new Error('No deal details provided for contract generation');
+    }
+
     const prompt = `You are an expert legal AI assistant for a smart contract escrow platform.
 
-Generate a professional contract agreement for this deal:
-${JSON.stringify(dealDetails, null, 2)}
+Generate a professional contract agreement customized for THIS SPECIFIC deal. You MUST incorporate all of the following deal details into the contract - do not use a generic template:
+
+${dealJson}
+
+Include in the contract: the exact title, amount (USDC), role (buyer/seller), counterparty address, description of work, initiatorDeadline (funding deadline), and completionDeadline (delivery deadline) where applicable.
 
 Return a JSON object with:
 {
-  "contract": "markdown formatted contract text",
+  "contract": "markdown formatted contract text with the specific deal terms above",
   "questions": ["question1", "question2", ...]
 }`;
 

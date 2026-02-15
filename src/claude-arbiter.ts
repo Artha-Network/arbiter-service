@@ -139,6 +139,16 @@ Analyze the evidence against the policy rules and return ONLY the JSON object.`;
     return out;
   }
 
+  private extractJsonFromText(text: string): string | null {
+    let s = text.trim();
+    const codeFenceMatch = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeFenceMatch) s = codeFenceMatch[1].trim();
+    const start = s.indexOf('{');
+    const end = s.lastIndexOf('}');
+    if (start === -1 || end === -1 || end <= start) return null;
+    return s.slice(start, end + 1);
+  }
+
   private extractJson(text: string): Record<string, unknown> {
     const trimmed = text.trim();
     const start = trimmed.indexOf('{');
@@ -171,19 +181,27 @@ Analyze the evidence against the policy rules and return ONLY the JSON object.`;
   }
 
   async generateContract(dealDetails: unknown) {
+    const dealJson = JSON.stringify(dealDetails, null, 2);
+    if (!dealJson || dealJson === '{}') {
+      throw new Error('No deal details provided for contract generation');
+    }
+
     const response = await this.client.messages.create({
       model: CONFIG.ai.anthropic.arbitrationModel,
-      max_tokens: 1024,
+      max_tokens: 4096,
       messages: [{
         role: 'user',
         content: `You are an expert legal AI assistant for a smart contract escrow platform.
 
-Generate a professional contract agreement for this deal:
-${JSON.stringify(dealDetails, null, 2)}
+Generate a professional contract agreement customized for THIS SPECIFIC deal. You MUST incorporate all of the following deal details into the contract - do not use a generic template:
+
+${dealJson}
+
+Include in the contract: the exact title, amount (USDC), role (buyer/seller), counterparty address, description of work, initiatorDeadline (funding deadline), and completionDeadline (delivery deadline) where applicable.
 
 Return a JSON object with:
 {
-  "contract": "markdown formatted contract text",
+  "contract": "markdown formatted contract text with the specific deal terms above",
   "questions": ["question1", "question2", ...]
 }
 
@@ -191,15 +209,18 @@ Return only the JSON object, no markdown code fence.`,
       }],
     });
 
-    const textBlock = response.content?.find((b: { type: string }) => b.type === 'text');
-    const text = textBlock && typeof (textBlock as { text?: string }).text === 'string'
-      ? (textBlock as { text: string }).text
-      : '';
+    const textBlocks = (response.content || []).filter((b: { type: string }) => b.type === 'text');
+    const text = textBlocks
+      .map((b: { text?: string }) => (typeof b.text === 'string' ? b.text : ''))
+      .join('\n');
     if (!text) throw new Error('Empty response from Claude');
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start === -1 || end === -1) throw new Error('No JSON in response');
-    return JSON.parse(text.slice(start, end + 1));
+
+    const jsonStr = this.extractJsonFromText(text);
+    if (!jsonStr) {
+      console.error('[ClaudeArbiter] Failed to extract JSON. Raw response (first 500 chars):', text.slice(0, 500));
+      throw new Error('No JSON in response');
+    }
+    return JSON.parse(jsonStr);
   }
 
   static verifyTicket(signedTicket: SignedResolveTicket): boolean {
