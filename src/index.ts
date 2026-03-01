@@ -73,16 +73,38 @@ app.get('/arbiter/pubkey', (_req, res) => {
   res.json({ arbiter_pubkey: arbiter.getArbiterPublicKey() });
 });
 
+function buildFallbackContract(details: Record<string, unknown>): object {
+  const title = details.title ?? 'Escrow Agreement';
+  const amount = details.amount ?? '0';
+  const role = details.role ?? 'party';
+  const counterparty = details.counterparty ?? 'Counterparty';
+  const description = details.description ?? 'As described by the initiating party.';
+  const completionDeadline = details.completionDeadline ?? details.deliveryDeadline ?? 'As agreed';
+  const disputeDeadline = details.disputeDeadline ?? '7';
+  const today = new Date().toISOString().split('T')[0];
+
+  return {
+    source: 'fallback',
+    contract: `# ${title}\n\n**Date:** ${today}\n\n## Parties\n- **Initiator (${role}):** Connected wallet\n- **Counterparty:** \`${counterparty}\`\n\n## Agreement\n\n${description}\n\n## Financial Terms\n- **Amount:** ${amount} USDC\n- **Held in:** On-chain escrow (Solana)\n\n## Deadlines\n- **Delivery:** ${completionDeadline}\n- **Dispute window:** ${disputeDeadline} days after delivery\n\n## Dispute Resolution\nDisputes will be reviewed by the Artha AI arbiter. The arbiter's signed resolution ticket will govern fund release.\n\n---\n*This is a template contract generated in fallback mode. Please review all terms before proceeding.*`,
+    questions: [
+      'Is the description of work complete and unambiguous?',
+      'Have both parties agreed to the delivery deadline?',
+    ],
+  };
+}
+
 app.post('/generate-contract', async (req, res) => {
   try {
     const result = await arbiter.generateContract(req.body);
     res.json(result);
   } catch (error) {
     console.error('Contract generation error:', error);
-    res.status(500).json({
-      error: 'Contract generation failed',
-      ...(isProduction ? {} : { message: error instanceof Error ? error.message : 'Unknown error' }),
-    });
+    if (isProduction) {
+      return res.status(500).json({ error: 'Contract generation failed' });
+    }
+    // In development, return a fallback template so the UI can still proceed
+    console.warn('[arbiter] AI call failed — returning fallback contract template');
+    return res.json(buildFallbackContract(req.body as Record<string, unknown>));
   }
 });
 
