@@ -1,26 +1,14 @@
 import 'dotenv/config';
 
-export type AIProvider = 'claude' | 'gemini';
-
 export const CONFIG = {
     ai: {
-        provider: (process.env.AI_PROVIDER || 'claude').toLowerCase() as AIProvider,
         anthropic: {
             apiKey: process.env.ANTHROPIC_API_KEY || '',
-            arbitrationModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+            arbitrationModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
+            contractModel: process.env.ANTHROPIC_CONTRACT_MODEL || 'claude-sonnet-4-6',
             maxTokens: 1024,
+            contractMaxTokens: 4096,
         },
-    },
-    gemini: {
-        apiKey: process.env.GEMINI_API_KEY || '',
-        arbitrationModel: process.env.GEMINI_MODEL_ARBITRATION || 'gemini-2.5-flash',
-        contractModel: process.env.GEMINI_MODEL_CONTRACT || 'gemini-2.5-flash',
-        defaults: {
-            temperature: 0.1,
-            topP: 0.8,
-            topK: 40,
-            maxOutputTokens: 1024,
-        }
     },
     arbiter: {
         secretHex: process.env.ARBITER_ED25519_SECRET_HEX!,
@@ -31,7 +19,7 @@ export const CONFIG = {
     },
     policy: {
         version: 'v1.0',
-        disputeWindowCheck: true, // Application logic flag
+        disputeWindowCheck: false,
     },
     supabase: {
         url: process.env.SUPABASE_URL || '',
@@ -42,15 +30,9 @@ export const CONFIG = {
     }
 };
 
-// Fail fast on missing critical env vars for the selected provider
-if (CONFIG.ai.provider === 'claude') {
-    if (!CONFIG.ai.anthropic.apiKey) {
-        throw new Error('ANTHROPIC_API_KEY is required when AI_PROVIDER=claude');
-    }
-} else {
-    if (!CONFIG.gemini.apiKey) {
-        throw new Error('GEMINI_API_KEY is required when AI_PROVIDER=gemini');
-    }
+// Fail fast on missing critical env vars
+if (!CONFIG.ai.anthropic.apiKey) {
+    throw new Error('ANTHROPIC_API_KEY is required');
 }
 
 if (!CONFIG.arbiter.secretHex) {

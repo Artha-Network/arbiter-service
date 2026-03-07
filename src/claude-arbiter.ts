@@ -146,7 +146,47 @@ Analyze the evidence against the policy rules and return ONLY the JSON object.`;
     const start = s.indexOf('{');
     const end = s.lastIndexOf('}');
     if (start === -1 || end === -1 || end <= start) return null;
-    return s.slice(start, end + 1);
+    const raw = s.slice(start, end + 1);
+
+    // Try parsing as-is first
+    try {
+      JSON.parse(raw);
+      return raw;
+    } catch {
+      // LLM often produces unescaped newlines/quotes inside JSON string values.
+      // Attempt repair: find string values and escape problematic characters.
+      try {
+        const repaired = raw.replace(
+          /("(?:contract|questions)":\s*")([^]*?)("(?:\s*[,}]))/g,
+          (_match, prefix, value, suffix) => {
+            const escaped = value
+              .replace(/\\/g, '\\\\')
+              .replace(/"/g, '\\"')
+              .replace(/\n/g, '\\n')
+              .replace(/\r/g, '\\r')
+              .replace(/\t/g, '\\t');
+            return prefix + escaped + suffix;
+          }
+        );
+        JSON.parse(repaired);
+        return repaired;
+      } catch {
+        // Fallback: extract contract text manually
+        const contractMatch = raw.match(/"contract"\s*:\s*"([\s\S]*?)"\s*,\s*"questions"/);
+        const questionsMatch = raw.match(/"questions"\s*:\s*\[([\s\S]*?)\]/);
+        if (contractMatch) {
+          const contractText = contractMatch[1]
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t');
+          const questions = questionsMatch ? questionsMatch[1] : '';
+          return `{"contract":"${contractText}","questions":[${questions}]}`;
+        }
+        return raw; // Return raw and let caller handle the parse error
+      }
+    }
   }
 
   private extractJson(text: string): Record<string, unknown> {
@@ -187,8 +227,8 @@ Analyze the evidence against the policy rules and return ONLY the JSON object.`;
     }
 
     const response = await this.client.messages.create({
-      model: CONFIG.ai.anthropic.arbitrationModel,
-      max_tokens: 4096,
+      model: CONFIG.ai.anthropic.contractModel,
+      max_tokens: CONFIG.ai.anthropic.contractMaxTokens,
       messages: [{
         role: 'user',
         content: `You are an expert legal AI assistant for a smart contract escrow platform.
@@ -220,7 +260,12 @@ Return only the JSON object, no markdown code fence.`,
       console.error('[ClaudeArbiter] Failed to extract JSON. Raw response (first 500 chars):', text.slice(0, 500));
       throw new Error('No JSON in response');
     }
-    return JSON.parse(jsonStr);
+    try {
+      return JSON.parse(jsonStr);
+    } catch (parseErr) {
+      console.error('[ClaudeArbiter] JSON parse failed. Extracted string (first 500 chars):', jsonStr.slice(0, 500));
+      throw parseErr;
+    }
   }
 
   static verifyTicket(signedTicket: SignedResolveTicket): boolean {

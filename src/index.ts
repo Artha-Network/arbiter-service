@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
-import { GeminiArbiter } from './gemini-arbiter.js';
 import { ClaudeArbiter } from './claude-arbiter.js';
 import { ArbitrationRequestSchema } from './types.js';
 import { CONFIG } from './config.js';
@@ -17,9 +16,7 @@ if (isProduction && !CONFIG.security.adminKey) {
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-const arbiter = CONFIG.ai.provider === 'claude'
-  ? new ClaudeArbiter()
-  : new GeminiArbiter();
+const arbiter = new ClaudeArbiter();
 
 // API Key Authentication Middleware
 const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -128,9 +125,7 @@ app.post('/arbitrate', arbitrateLimiter, async (req, res) => {
 
 app.post('/verify', (req, res) => {
   try {
-    const isValid = CONFIG.ai.provider === 'claude'
-      ? ClaudeArbiter.verifyTicket(req.body)
-      : GeminiArbiter.verifyTicket(req.body);
+    const isValid = ClaudeArbiter.verifyTicket(req.body);
     res.json({ valid: isValid });
   } catch {
     res.status(400).json({ error: 'Invalid ticket format' });
