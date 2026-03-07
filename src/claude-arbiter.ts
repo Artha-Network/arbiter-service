@@ -114,7 +114,7 @@ Return a single JSON object with these exact fields (no markdown, no code fence)
 - deal_id: "${request.deal.deal_id}"
 - outcome: "RELEASE" or "REFUND" (based on rule analysis)
 - reason_short: Brief explanation (max 200 chars)
-- rationale_cid: "pending"
+- rationale_cid: Detailed reasoning and analysis explaining your decision (2-4 paragraphs)
 - violated_rules: Array of rule IDs that were violated (strings)
 - confidence: Number between 0 and 1
 - nonce: "${nonce}"

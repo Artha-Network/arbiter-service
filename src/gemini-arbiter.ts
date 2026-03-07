@@ -215,7 +215,7 @@ Generate a JSON response with these exact fields filled in:
 - deal_id: "${request.deal.deal_id}"
 - outcome: "RELEASE" or "REFUND" (based on rule analysis)
 - reason_short: Brief explanation (max 200 chars)
-- rationale_cid: "pending" (will be stored separately)
+- rationale_cid: Detailed reasoning and analysis explaining your decision (2-4 paragraphs)
 - violated_rules: Array of rule IDs that were violated
 - confidence: Number between 0 and 1
 - nonce: "${nonce}"
