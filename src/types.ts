@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 
 // Resolve Ticket Schema - matches the onchain program expectations
 export const ResolveTicketSchema = z.object({
@@ -61,35 +60,3 @@ export const SignedResolveTicketSchema = z.object({
 });
 
 export type SignedResolveTicket = z.infer<typeof SignedResolveTicketSchema>;
-
-// Gemini response schema for structured output - DERIVED from Zod
-// @ts-ignore - zod-to-json-schema creates excessively deep types
-const rawSchema = zodToJsonSchema(ResolveTicketSchema, { target: 'jsonSchema7' });
-
-// Sanitization for Gemini API (doesn't support 'const', 'additionalProperties', '$schema')
-function sanitizeForGemini(schema: any): any {
-  if (typeof schema !== 'object' || schema === null) return schema;
-
-  const { $schema, additionalProperties, const: constVal, ...rest } = schema;
-
-  if (constVal !== undefined) {
-    rest.enum = [constVal];
-  }
-
-  if (schema.type === 'object') {
-    // Recursively sanitize properties
-    if (rest.properties) {
-      for (const key in rest.properties) {
-        rest.properties[key] = sanitizeForGemini(rest.properties[key]);
-      }
-    }
-  } else if (schema.type === 'array') {
-    if (rest.items) {
-      rest.items = sanitizeForGemini(rest.items);
-    }
-  }
-
-  return rest;
-}
-
-export const responseJsonSchema = sanitizeForGemini(rawSchema);

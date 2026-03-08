@@ -141,26 +141,32 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-const server = app.listen(CONFIG.server.port, () => {
-  console.log(`AI Arbiter Service running on port ${CONFIG.server.port}`);
-  console.log(`Arbiter Public Key: ${arbiter.getArbiterPublicKey()}`);
-});
+// Export app for serverless (Vercel) usage
+export default app;
 
-// Graceful shutdown
-const shutdown = (signal: string) => {
-  console.log(`${signal} received, shutting down...`);
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 10_000);
-};
+// Only start the server when run directly (not imported)
+if (process.argv[1]?.replace(/\\/g, '/').endsWith('/index.ts') ||
+    process.argv[1]?.replace(/\\/g, '/').endsWith('/index.js')) {
+  const server = app.listen(CONFIG.server.port, () => {
+    console.log(`AI Arbiter Service running on port ${CONFIG.server.port}`);
+    console.log(`Arbiter Public Key: ${arbiter.getArbiterPublicKey()}`);
+  });
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+  const shutdown = (signal: string) => {
+    console.log(`${signal} received, shutting down...`);
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10_000);
+  };
 
-server.on('error', (err: NodeJS.ErrnoException) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${CONFIG.server.port} is already in use.`);
-  } else {
-    console.error('Server error:', err);
-  }
-  process.exit(1);
-});
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${CONFIG.server.port} is already in use.`);
+    } else {
+      console.error('Server error:', err);
+    }
+    process.exit(1);
+  });
+}

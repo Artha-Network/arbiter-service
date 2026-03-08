@@ -249,9 +249,9 @@ Return only the JSON object, no markdown code fence.`,
       }],
     });
 
-    const textBlocks = (response.content || []).filter((b: { type: string }) => b.type === 'text');
+    const textBlocks = (response.content || []).filter((b: any) => b.type === 'text');
     const text = textBlocks
-      .map((b: { text?: string }) => (typeof b.text === 'string' ? b.text : ''))
+      .map((b: any) => (typeof b.text === 'string' ? b.text : ''))
       .join('\n');
     if (!text) throw new Error('Empty response from Claude');
 
