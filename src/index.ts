@@ -110,10 +110,10 @@ app.post('/arbitrate', arbitrateLimiter, async (req, res) => {
     const request = ArbitrationRequestSchema.parse(req.body);
     const signedTicket = await arbiter.arbitrateCase(request);
     res.json(signedTicket);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Arbitration error:', error);
-    if (error.name === 'ZodError') {
-      res.status(400).json({ error: 'Invalid request format', ...(isProduction ? {} : { details: error.errors }) });
+    if (error instanceof Error && error.name === 'ZodError') {
+      res.status(400).json({ error: 'Invalid request format', ...(isProduction ? {} : { details: (error as any).errors }) });
     } else {
       res.status(500).json({
         error: 'Arbitration failed',

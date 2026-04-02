@@ -6,7 +6,7 @@ export const ResolveTicketSchema = z.object({
   deal_id: z.string().min(1),
   outcome: z.enum(['RELEASE', 'REFUND']),
   reason_short: z.string().max(200),
-  rationale_cid: z.string(), // IPFS/Arweave CID
+  rationale_cid: z.string(), // Plain-text rationale (legacy field name from IPFS era)
   violated_rules: z.array(z.string()),
   confidence: z.number().min(0).max(1),
   nonce: z.string().regex(/^[0-9]+$/),
@@ -32,7 +32,7 @@ export type Deal = z.infer<typeof DealSchema>;
 
 // Evidence structure
 export const EvidenceSchema = z.object({
-  cid: z.string().min(1), // IPFS/Arweave CID
+  cid: z.string().min(1), // Supabase Storage path (legacy field name from IPFS era)
   type: z.enum(['pdf', 'image', 'text', 'json']),
   description: z.string(),
   submitted_by: z.enum(['seller', 'buyer']),

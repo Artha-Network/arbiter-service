@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { sha256 } from '@noble/hashes/sha256';
 import nacl from 'tweetnacl';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
   ArbitrationRequest,
   ResolveTicket,
@@ -14,19 +13,11 @@ import { CONFIG } from './config.js';
 export class ClaudeArbiter {
   private client: Anthropic;
   private arbiterKeypair: nacl.SignKeyPair;
-  private supabase: SupabaseClient | null;
 
   constructor() {
     this.client = new Anthropic({
       apiKey: CONFIG.ai.anthropic.apiKey,
     });
-
-    if (CONFIG.supabase.url && CONFIG.supabase.serviceKey) {
-      this.supabase = createClient(CONFIG.supabase.url, CONFIG.supabase.serviceKey);
-    } else {
-      this.supabase = null;
-      console.warn('⚠️ Supabase client not initialized. Evidence fetching will be disabled.');
-    }
 
     const secretKey = Uint8Array.from(Buffer.from(CONFIG.arbiter.secretHex, 'hex'));
     this.arbiterKeypair = nacl.sign.keyPair.fromSeed(secretKey.slice(0, 32));

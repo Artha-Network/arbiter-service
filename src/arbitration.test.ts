@@ -1,43 +1,30 @@
 /**
  * AI Arbitration test suite – all policy use cases and API behaviour.
- * Requires ANTHROPIC_API_KEY (when AI_PROVIDER=claude) or GEMINI_API_KEY (when AI_PROVIDER=gemini).
+ * Requires ANTHROPIC_API_KEY.
  * Run: npm test -- --run
  */
 import 'dotenv/config';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { ClaudeArbiter } from './claude-arbiter.js';
-import { GeminiArbiter } from './gemini-arbiter.js';
 import { CONFIG } from './config.js';
 import { ArbitrationRequestSchema } from './types.js';
 import { ARBITRATION_TEST_CASES } from './test-fixtures.js';
 
-const hasApiKey =
-  (CONFIG.ai.provider === 'claude' && !!CONFIG.ai.anthropic?.apiKey) ||
-  (CONFIG.ai.provider === 'gemini' && !!CONFIG.gemini?.apiKey);
+const hasApiKey = !!CONFIG.ai.anthropic?.apiKey;
 
-const arbiter = hasApiKey
-  ? (CONFIG.ai.provider === 'claude' ? new ClaudeArbiter() : new GeminiArbiter())
-  : null;
-
-const verifyTicket = (signed: { ticket: unknown; arbiter_pubkey: string; ed25519_signature: string }) =>
-  CONFIG.ai.provider === 'claude'
-    ? ClaudeArbiter.verifyTicket(signed)
-    : GeminiArbiter.verifyTicket(signed);
+const arbiter = hasApiKey ? new ClaudeArbiter() : null;
 
 describe('AI Arbitration – config and health', () => {
-  it('loads config and has API key for selected provider', () => {
-    expect(CONFIG.ai.provider).toBeDefined();
-    expect(['claude', 'gemini']).toContain(CONFIG.ai.provider);
-    if (CONFIG.ai.provider === 'claude') {
+  it('loads config and has API key', () => {
+    expect(CONFIG.ai.provider).toBe('claude');
+    if (hasApiKey) {
       expect(CONFIG.ai.anthropic?.apiKey).toBeTruthy();
-    } else {
-      expect(CONFIG.gemini?.apiKey).toBeTruthy();
     }
   });
 
   it('arbiter instance is created when API key is present', () => {
     if (!hasApiKey) {
-      console.warn('Skipping: no API key set. Set ANTHROPIC_API_KEY or GEMINI_API_KEY to run arbitration tests.');
+      console.warn('Skipping: no API key set. Set ANTHROPIC_API_KEY to run arbitration tests.');
       return;
     }
     expect(arbiter).toBeDefined();
@@ -65,10 +52,8 @@ describe('AI Arbitration – policy use cases', () => {
       expect(res.ticket.reason_short).toBeTruthy();
       expect(res.ticket.violated_rules).toBeDefined();
       expect(Array.isArray(res.ticket.violated_rules)).toBe(true);
-      const valid = verifyTicket(res);
+      const valid = ClaudeArbiter.verifyTicket(res);
       expect(valid).toBe(true);
-      // Optional: when AI returns violated_rules, expect the rule ID to be mentioned (for REFUND cases).
-      // For RELEASE, violated_rules is often empty so we only assert outcome above.
       if (tc.expectedRule && res.ticket.violated_rules && res.ticket.violated_rules.length > 0) {
         const ruleMentioned =
           res.ticket.violated_rules.some((r) => r.toLowerCase().includes(tc.expectedRule!.toLowerCase())) ||
@@ -131,7 +116,6 @@ describe('AI Arbitration – request validation', () => {
   });
 
   it('schema accepts status Funded (arbiter enforces Disputed at runtime)', () => {
-    // DealSchema allows any valid enum status; business rule "must be Disputed" is enforced in arbiter.arbitrateCase()
     const withFunded = {
       deal: {
         deal_id: 'uuid-deal-123',
@@ -181,7 +165,7 @@ describe('Verify ticket', () => {
     if (!arbiter) return;
     const request = ARBITRATION_TEST_CASES[0].request;
     const signed = await arbiter.arbitrateCase(request);
-    expect(verifyTicket(signed)).toBe(true);
+    expect(ClaudeArbiter.verifyTicket(signed)).toBe(true);
   });
 
   it('rejects tampered ticket', async () => {
@@ -192,6 +176,6 @@ describe('Verify ticket', () => {
       ...signed,
       ticket: { ...signed.ticket, outcome: signed.ticket.outcome === 'RELEASE' ? 'REFUND' : 'RELEASE' },
     };
-    expect(verifyTicket(tampered)).toBe(false);
+    expect(ClaudeArbiter.verifyTicket(tampered)).toBe(false);
   });
 });

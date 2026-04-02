@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 export const CONFIG = {
     ai: {
+        provider: 'claude' as const,
         anthropic: {
             apiKey: process.env.ANTHROPIC_API_KEY || '',
             arbitrationModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6',
@@ -21,10 +22,6 @@ export const CONFIG = {
         version: 'v1.0',
         disputeWindowCheck: false,
     },
-    supabase: {
-        url: process.env.SUPABASE_URL || '',
-        serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || ''
-    },
     security: {
         adminKey: process.env.ARBITER_ADMIN_KEY || ''
     }
@@ -37,10 +34,6 @@ if (!CONFIG.ai.anthropic.apiKey) {
 
 if (!CONFIG.arbiter.secretHex) {
     throw new Error('ARBITER_ED25519_SECRET_HEX environment variable is required');
-}
-
-if (!CONFIG.supabase.url || !CONFIG.supabase.serviceKey) {
-    console.warn('⚠️ SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing. Evidence fetching will fail.');
 }
 
 if (!CONFIG.security.adminKey) {

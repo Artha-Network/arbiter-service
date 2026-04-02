@@ -161,7 +161,7 @@ await program.methods
 
 2. **Evidence Submission**
    - Parties upload evidence (photos, documents, etc.)
-   - Evidence stored on IPFS/Arweave with CIDs
+   - Evidence stored in Supabase Storage (field named `cid` for legacy reasons)
 
 3. **Arbitration Request**
    - Backend calls `/arbitrate` with:
