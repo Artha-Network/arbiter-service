@@ -217,6 +217,10 @@ Analyze the evidence against the policy rules and return ONLY the JSON object.`;
       throw new Error('No deal details provided for contract generation');
     }
 
+    const now = new Date();
+    const todayIso = now.toISOString().split('T')[0];
+    const todayLong = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
     const response = await this.client.messages.create({
       model: CONFIG.ai.anthropic.contractModel,
       max_tokens: CONFIG.ai.anthropic.contractMaxTokens,
@@ -224,19 +228,34 @@ Analyze the evidence against the policy rules and return ONLY the JSON object.`;
         role: 'user',
         content: `You are an expert legal AI assistant for a smart contract escrow platform.
 
+TODAY'S DATE: ${todayLong} (${todayIso}). Use THIS date as the contract execution / effective date. Do NOT invent or use any other date for "Date", "Effective Date", or "Executed on". Only use the deadline dates from the deal details for delivery/dispute deadlines.
+
 Generate a professional contract agreement customized for THIS SPECIFIC deal. You MUST incorporate all of the following deal details into the contract - do not use a generic template:
 
 ${dealJson}
 
 Include in the contract: the exact title, amount (USDC), role (buyer/seller), counterparty address, description of work, initiatorDeadline (funding deadline), and completionDeadline (delivery deadline) where applicable.
 
-Return a JSON object with:
+OUTPUT FORMAT — return ONLY a JSON object (no markdown fences) shaped exactly like this:
 {
-  "contract": "markdown formatted contract text with the specific deal terms above",
+  "contract": "<HTML string — see rules below>",
   "questions": ["question1", "question2", ...]
 }
 
-Return only the JSON object, no markdown code fence.`,
+CONTRACT HTML RULES:
+- Output a single self-contained HTML fragment (no <html>, <head>, <body>, <script>, <style>, <iframe>, or inline event handlers).
+- Wrap the whole contract in <article class="contract">.
+- Use semantic, well-structured tags:
+  - <h1> for the contract title, <h2> for top-level sections (Parties, Scope of Work, Financial Terms, Deadlines, Dispute Resolution, Signatures, etc.), <h3> for subsections.
+  - <p> for paragraphs.
+  - <ul>/<ol> + <li> for lists. Never emit list items as plain text with bullets.
+  - <table> with <thead>/<tbody>/<tr>/<th>/<td> for tabular data (e.g. parties table, fee/timeline table).
+  - <strong> for emphasis on key terms (amounts, deadlines, addresses), <em> for definitions, <code> for wallet addresses and on-chain identifiers.
+  - <hr> to separate major sections where appropriate.
+- Write valid, properly nested HTML. Escape any literal &, <, > inside text as &amp;, &lt;, &gt;.
+- Inside the JSON string, escape every double quote as \\" and every newline as \\n. The output must be valid JSON parseable by JSON.parse.
+- Do NOT include any CSS, classes other than the wrapper "contract", or inline styles — the frontend handles styling.
+- Aim for a polished, lawyer-grade document: clear hierarchy, numbered clauses where natural, no walls of text.`,
       }],
     });
 

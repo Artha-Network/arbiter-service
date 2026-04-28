@@ -79,19 +79,63 @@ app.get('/arbiter/pubkey', (_req, res) => {
   res.json({ arbiter_pubkey: arbiter.getArbiterPublicKey() });
 });
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function buildFallbackContract(details: Record<string, unknown>): object {
-  const title = details.title ?? 'Escrow Agreement';
-  const amount = details.amount ?? '0';
-  const role = details.role ?? 'party';
-  const counterparty = details.counterparty ?? 'Counterparty';
-  const description = details.description ?? 'As described by the initiating party.';
-  const completionDeadline = details.completionDeadline ?? details.deliveryDeadline ?? 'As agreed';
-  const disputeDeadline = details.disputeDeadline ?? '7';
+  const title = escapeHtml(details.title ?? 'Escrow Agreement');
+  const amount = escapeHtml(details.amount ?? '0');
+  const role = escapeHtml(details.role ?? 'party');
+  const counterparty = escapeHtml(details.counterparty ?? 'Counterparty');
+  const description = escapeHtml(details.description ?? 'As described by the initiating party.');
+  const completionDeadline = escapeHtml(details.completionDeadline ?? details.deliveryDeadline ?? 'As agreed');
+  const disputeDeadline = escapeHtml(details.disputeDeadline ?? '7');
   const today = new Date().toISOString().split('T')[0];
+
+  const contract = `<article class="contract">
+  <h1>${title}</h1>
+  <p><strong>Date:</strong> ${today}</p>
+
+  <h2>1. Parties</h2>
+  <table>
+    <thead><tr><th>Role</th><th>Wallet</th></tr></thead>
+    <tbody>
+      <tr><td>Initiator (${role})</td><td><code>Connected wallet</code></td></tr>
+      <tr><td>Counterparty</td><td><code>${counterparty}</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>2. Agreement</h2>
+  <p>${description}</p>
+
+  <h2>3. Financial Terms</h2>
+  <ul>
+    <li><strong>Amount:</strong> ${amount} USDC</li>
+    <li><strong>Held in:</strong> On-chain escrow (Solana)</li>
+  </ul>
+
+  <h2>4. Deadlines</h2>
+  <ul>
+    <li><strong>Delivery:</strong> ${completionDeadline}</li>
+    <li><strong>Dispute window:</strong> ${disputeDeadline} days after delivery</li>
+  </ul>
+
+  <h2>5. Dispute Resolution</h2>
+  <p>Disputes will be reviewed by the Artha AI arbiter. The arbiter's signed resolution ticket will govern fund release.</p>
+
+  <hr />
+  <p><em>This is a template contract generated in fallback mode. Please review all terms before proceeding.</em></p>
+</article>`;
 
   return {
     source: 'fallback',
-    contract: `# ${title}\n\n**Date:** ${today}\n\n## Parties\n- **Initiator (${role}):** Connected wallet\n- **Counterparty:** \`${counterparty}\`\n\n## Agreement\n\n${description}\n\n## Financial Terms\n- **Amount:** ${amount} USDC\n- **Held in:** On-chain escrow (Solana)\n\n## Deadlines\n- **Delivery:** ${completionDeadline}\n- **Dispute window:** ${disputeDeadline} days after delivery\n\n## Dispute Resolution\nDisputes will be reviewed by the Artha AI arbiter. The arbiter's signed resolution ticket will govern fund release.\n\n---\n*This is a template contract generated in fallback mode. Please review all terms before proceeding.*`,
+    contract,
     questions: [
       'Is the description of work complete and unambiguous?',
       'Have both parties agreed to the delivery deadline?',
