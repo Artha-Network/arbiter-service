@@ -54,6 +54,15 @@ const arbitrateLimiter = rateLimit({
   message: { error: 'Too many arbitration requests, please try again later' },
 });
 
+// Contract generation also hits Claude — cap per-IP so a stuck client can't drain credits.
+const contractLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many contract generation requests, please try again later' },
+});
+
 app.use(generalLimiter);
 app.use(requireAuth);
 
@@ -90,7 +99,7 @@ function buildFallbackContract(details: Record<string, unknown>): object {
   };
 }
 
-app.post('/generate-contract', async (req, res) => {
+app.post('/generate-contract', contractLimiter, async (req, res) => {
   try {
     const result = await arbiter.generateContract(req.body);
     res.json(result);
