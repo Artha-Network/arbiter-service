@@ -236,15 +236,21 @@ ${dealJson}
 
 Include in the contract: the exact title, amount (USDC), role (buyer/seller), counterparty address, description of work, initiatorDeadline (funding deadline), and completionDeadline (delivery deadline) where applicable.
 
-OUTPUT FORMAT — return ONLY a JSON object (no markdown fences) shaped exactly like this:
+OUTPUT FORMAT — your ENTIRE response MUST be a single JSON object and nothing else:
+- No preamble like "Here is the contract:" or "Sure, I'll generate...".
+- No trailing commentary.
+- No markdown code fences (no \`\`\`json, no \`\`\`).
+- The first character of your response MUST be { and the last character MUST be }.
+
+The JSON object MUST be shaped EXACTLY like this:
 {
   "contract": "<HTML string — see rules below>",
   "questions": ["question1", "question2", ...]
 }
 
-CONTRACT HTML RULES:
-- Output a single self-contained HTML fragment (no <html>, <head>, <body>, <script>, <style>, <iframe>, or inline event handlers).
-- Wrap the whole contract in <article class="contract">.
+CONTRACT HTML RULES (the contract field is DISPLAY-READY HTML — the frontend renders it directly with dangerouslySetInnerHTML, so send exactly the tags you want shown):
+- The contract value MUST start with the literal characters \`<article class="contract">\` and end with \`</article>\`. No leading text. No leading whitespace. No code fences inside the string.
+- Self-contained HTML fragment only — do NOT include <html>, <head>, <body>, <script>, <style>, <iframe>, or inline event handlers (no on* attributes).
 - Use semantic, well-structured tags:
   - <h1> for the contract title, <h2> for top-level sections (Parties, Scope of Work, Financial Terms, Deadlines, Dispute Resolution, Signatures, etc.), <h3> for subsections.
   - <p> for paragraphs.
@@ -252,8 +258,8 @@ CONTRACT HTML RULES:
   - <table> with <thead>/<tbody>/<tr>/<th>/<td> for tabular data (e.g. parties table, fee/timeline table).
   - <strong> for emphasis on key terms (amounts, deadlines, addresses), <em> for definitions, <code> for wallet addresses and on-chain identifiers.
   - <hr> to separate major sections where appropriate.
-- Write valid, properly nested HTML. Escape any literal &, <, > inside text as &amp;, &lt;, &gt;.
-- Inside the JSON string, escape every double quote as \\" and every newline as \\n. The output must be valid JSON parseable by JSON.parse.
+- Write valid, properly nested HTML. Inside text content, escape any literal &, <, > as &amp;, &lt;, &gt;. Do NOT escape the HTML tags themselves — they must remain real \`<\` and \`>\` characters so the browser renders them.
+- Inside the JSON string value, escape every double quote as \\" and every newline as \\n. The output must be valid JSON parseable by JSON.parse.
 - Do NOT include any CSS, classes other than the wrapper "contract", or inline styles — the frontend handles styling.
 - Aim for a polished, lawyer-grade document: clear hierarchy, numbered clauses where natural, no walls of text.`,
       }],
